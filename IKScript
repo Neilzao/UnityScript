@@ -1,0 +1,127 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class tps_76_IKScript : MonoBehaviour {
+
+    Animator anim;
+
+    public float ikWeight = 1f;
+
+    public Transform leftFootIKTarget;
+    public Transform rightFootIKTarget;
+
+    public Transform leftHandIKTargt;
+
+    public Transform leftKneeHint;
+    public Transform rightKneeHint;
+
+    Vector3 leftFootPos;
+    Vector3 rightFootPos;
+
+    Quaternion leftFootRot;
+    Quaternion rightFootRot;
+
+    float leftFootIKWeight;
+    float rightFootIKWeight;
+
+    Transform leftFoot;
+    Transform rightFoot;
+
+    public float IKOffsetY;
+
+    public float lookIKWeight;
+    public float bodyWeight;
+    public float headWeight;
+    public float eyesWeight;
+    public float clampKWeight;
+
+    public Transform lookAtTarget;
+
+    // Use this for initialization
+    void Start () {
+        anim = GetComponent<Animator >();
+        leftFoot = anim.GetBoneTransform(HumanBodyBones.LeftFoot);
+        rightFoot = anim.GetBoneTransform(HumanBodyBones.RightFoot );
+
+        //leftFootPos = leftFoot.position;
+        //rightFootPos = rightFoot.position;
+        leftFootRot = leftFoot.rotation;
+        rightFootRot = rightFoot.rotation;
+    }
+	
+	// Update is called once per frame
+	void Update ()
+    {
+        //Ray ray = new Ray(leftHandIKTargt.position, Camera.main.transform.forward);
+
+       //Debug.DrawRay(leftHandIKTargt .position, Camera.main.transform.forward*15);
+
+        //lookAtTarget.position = ray.GetPoint(15);
+
+        
+
+        RaycastHit leftFootHit;
+        RaycastHit rightFootHit;
+
+        Vector3 lpos = leftFoot.TransformPoint(Vector3.zero);
+        Vector3 rpos = rightFoot.TransformPoint(Vector3.zero);
+
+        Quaternion  lrot = transform .rotation;
+        Quaternion  rrot = transform .rotation;
+
+        //leftFootRot = leftFoot.rotation;
+        //rightFootRot = rightFoot.rotation;
+
+        Ray rayLeftFoot = new Ray(lpos ,-Vector3 .up);
+        Debug.DrawRay(lpos, -Vector3.up * 2);
+
+        if (Physics.Raycast (lpos,-Vector3 .up,out leftFootHit ,2f))
+        {
+            leftFootPos = leftFootHit.point;
+            leftFootIKTarget .position = leftFootHit.point;
+            leftFootIKTarget.rotation = leftFootRot;
+            leftFootRot = Quaternion.FromToRotation(transform.up, leftFootHit.normal)* lrot;
+        }
+
+        if (Physics.Raycast(rpos, -Vector3.up, out rightFootHit, 2f))
+        {
+            rightFootPos = rightFootHit.point;
+            rightFootIKTarget.position = rightFootHit.point;
+            rightFootIKTarget.rotation = rightFootRot;
+            rightFootRot = Quaternion.FromToRotation(transform.up, rightFootHit.normal) * rrot;
+        }
+    }
+
+    private void OnAnimatorIK()
+    {
+        anim.SetLookAtWeight(lookIKWeight ,bodyWeight,headWeight ,eyesWeight ,clampKWeight  );
+        anim.SetLookAtPosition(lookAtTarget.position );
+
+        leftFootIKWeight = anim.GetFloat("leftFootGround");
+        rightFootIKWeight = anim.GetFloat("rightFootGround");
+
+        //leftFootIKWeight = 0;
+       // rightFootIKWeight = 0;
+
+        anim.SetIKPositionWeight(AvatarIKGoal.LeftFoot , leftFootIKWeight);
+        anim.SetIKPositionWeight(AvatarIKGoal.RightFoot , rightFootIKWeight);
+        anim.SetIKPosition(AvatarIKGoal.LeftFoot , leftFootPos + new Vector3 (0, IKOffsetY,0));
+        anim.SetIKPosition(AvatarIKGoal.RightFoot , rightFootPos + new Vector3(0, IKOffsetY, 0));
+
+        anim.SetIKRotationWeight(AvatarIKGoal.LeftFoot, leftFootIKWeight);
+        anim.SetIKRotationWeight(AvatarIKGoal.RightFoot, rightFootIKWeight);
+        anim.SetIKRotation(AvatarIKGoal.LeftFoot, leftFootRot );
+        anim.SetIKRotation(AvatarIKGoal.RightFoot, rightFootRot );
+
+        anim.SetIKPositionWeight(AvatarIKGoal.LeftHand , ikWeight );
+        anim.SetIKRotationWeight(AvatarIKGoal.LeftHand, ikWeight );
+        anim.SetIKPosition(AvatarIKGoal.LeftHand, leftHandIKTargt.position );
+        anim.SetIKRotation(AvatarIKGoal.LeftHand, leftHandIKTargt.rotation );
+
+        /*anim.SetIKHintPositionWeight (AvatarIKHint.LeftKnee, ikWeight);
+        anim.SetIKHintPositionWeight(AvatarIKHint.RightKnee, ikWeight);
+        anim.SetIKHintPosition(AvatarIKHint.LeftKnee, leftKneeHint.position);
+        anim.SetIKHintPosition(AvatarIKHint.RightKnee , rightKneeHint.position);*/
+    }
+}
