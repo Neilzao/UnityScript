@@ -1,0 +1,454 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class tps_76_script : MonoBehaviour {
+
+    //旋转模式相关参数，不重要
+    public enum RotationAxes { MouseXAndY = 0, MouseX = 1, MouseY = 2 };
+    public RotationAxes axes = RotationAxes.MouseXAndY;
+
+    //摄像机相关参数
+    public GameObject camera3p;
+    public Transform lookAtTarget;
+    public Vector3 cameraOffset;
+    Vector3 postCamPos;
+    public float theDistance = -2f;
+    public float MaxDistance = -10f;
+    public float ScrollKeySpeed = 10f;
+    public float smoothing = 40f;
+    
+    //鼠标拖动敏感度,最大旋转角度
+    public float sensitivityX = 5f;
+    public float sensitivityY = 5f;
+    public float rotationY = 0F;
+    public float minimumY = -60f;
+    public float maximumY = 60f;
+
+    //移动及敏感度
+    Vector3 movement;
+    public float speed = 5f;
+    public float dampening = 0.3f;
+
+    //90旋转纠正变量
+    public float baseRotation = 0f;
+    public float speedXOffset = 0f;
+    public float speedXOffsetTemp = 0f;
+
+    //跳跃所需变量
+    public float JumpSpeed = 400f;
+    public float jumpSmooth = 40f;
+    public GameObject jumpDirLayerWeight;
+    //public float jumpDirLayerWeight = 0f;
+    private Rigidbody m_Rigidbody;
+    public  Rigidbody test_rig;
+    private bool grounded = true;
+
+    //受击变量
+    public GameObject aimObject;
+    public AnimationCurve hitBodyCurve;
+    public AnimationCurve hitHeadCurve;
+    public AnimationCurve knockBackCurve;
+    public GameObject deleteMeThx;
+    private float HitTime = 0;
+    private bool hitOrNot = false ;
+
+    //击退参数
+    private float knockTime = 0;
+    public float knockBackPow = 400f;
+    public float knockBackPow_up = 400f;
+    public float knockBackRange = 5f;
+
+
+    Animator anim;
+
+
+    // Use this for initialization
+    void Start()
+    {
+        //camera3p = GameObject.Find("Main Camera");
+        //cameraOffset = camera3p .transform .position - transform .position ;
+        m_Rigidbody = GetComponent<Rigidbody>();
+        anim = GetComponent<Animator>();
+        anim.applyRootMotion = false;
+        camera3p.transform.position = transform.position;
+        postCamPos = camera3p.transform.position;        
+        //设置摄像机与角色的距离
+        SetDistance();
+       
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        /*// 滚轮设置 相机与人物的距离.  
+		if (Input.GetAxis ("Mouse ScrollWheel") != 0) {
+			theDistance = theDistance + Input.GetAxis ("Mouse ScrollWheel") * Time.deltaTime * ScrollKeySpeed;
+			// 鼠标中间滚动得到的值是不确定的,不会正好就是0,或 -10,当大于0时就设距离为0,小于MaxDistance就设置为MaxDistance
+			if (theDistance > 0)
+				theDistance = 0;
+			if (theDistance < MaxDistance)
+				theDistance = MaxDistance;
+			SetDistance ();
+		}*/
+
+        Ray ray = new Ray(Camera.main.transform.position , Camera.main.transform.forward);
+        Debug.DrawRay(Camera.main.transform.position, Camera.main.transform.forward * 10);
+
+        lookAtTarget.position = ray.GetPoint(10);
+
+        //移动数值的计算
+        float h = Input.GetAxisRaw("Horizontal");
+        float v = Input.GetAxisRaw("Vertical");
+        h = anim.GetFloat("moveDirectionH") * (1 - dampening) + h * dampening;
+        v = anim.GetFloat("moveDirectionV") * (1 - dampening) + v * dampening;
+        float moveMagnitude = (float)System.Math.Sqrt(h * h + v * v);
+        if (moveMagnitude > 0.05)
+        {
+            anim.SetFloat("MoveSpeed", moveMagnitude * speed);
+            anim.SetFloat("moveDirectionH", h);
+            anim.SetFloat("moveDirectionV", v);
+        }
+        else
+        {
+            anim.SetFloat("MoveSpeed", 0f);
+            anim.SetFloat("moveDirectionH", 0);
+            anim.SetFloat("moveDirectionV", 0);
+        }
+
+        //若非移动控制状态，就进行移动操作 
+        if (anim.GetBool("knockBackState") == false )
+        {
+            //确保角色位移不接受动作资源的影响
+            Move(h, v, moveMagnitude);
+        }
+          
+        //选装摄像机和角色的操作
+        Turning();
+
+        //设置摄像机跟着人物移动，并设置距离
+        SetDistance();
+
+        //接收指令跳跃
+        if (Input.GetButtonDown("Jump"))
+        {
+            anim.SetBool("fixDirection", false);
+            Jump();
+        }
+
+        //跳跃中的行为和参数设置，测试插件itween的功能，若不用itween，可用animationCurve控制曲线
+        if (anim.GetBool ("jumpState"))
+        {
+            iTween.MoveTo(jumpDirLayerWeight, iTween.Hash("y", 1f, "time", 0.3f, "easeType", iTween.EaseType.easeInOutQuad));                      
+        }
+        //跳跃后的参数设置
+        else
+        {
+            iTween.Stop(jumpDirLayerWeight);
+            jumpDirLayerWeight.gameObject.transform.position = new Vector3(0, 0, -3);
+            anim.SetLayerWeight(2, 0);
+        }
+        //测试itween的功能
+         anim.SetLayerWeight(2, jumpDirLayerWeight.transform.position.y);
+
+
+        //接受近身攻击指令
+        if (Input.GetKeyDown(KeyCode.V))
+        {
+            anim.SetTrigger("attackState");
+        }
+
+        //接收指令受击
+        if (Input.GetKeyDown(KeyCode.Z))
+        {
+            //用itween实现目标物体撞击中主角的演示。
+            //为啥用itween？ 语句简便，控制简单，效果好。
+            iTween.MoveTo(aimObject, iTween.Hash("x", transform .position .x,"z",transform .position .z, "time", 0.05f, "easeType", iTween.EaseType.easeOutQuad));
+
+            //获取世界坐标中的受击方向
+            Vector3 forceDir = transform.position - aimObject.transform.position;
+
+            //加上人物自身的旋转,获得最终需要叠加在人物身上的pose方向
+            float direction = transform.rotation.eulerAngles.y - anim.GetFloat("lookX");
+            forceDir  = Quaternion.Euler(0, -direction, 0) * forceDir;
+            anim.SetFloat("hitDirX", forceDir.normalized.x);
+            anim.SetFloat("hitDirY", forceDir.normalized.z);
+
+            //重置受击时间,对应animationCurve上的X轴参数
+            HitTime = 0f;
+            hitOrNot  = true ;
+            //0.25秒之后,受击结束,强制将受击层权重设为0.
+            Invoke("HitEnd", 0.25f);
+        }
+
+        //若受击,需要在受击时间内调整受击层的权重变化
+        if (hitOrNot)
+        {
+            HitTime += Time.deltaTime;
+            anim.SetLayerWeight(3, hitBodyCurve.Evaluate(HitTime));
+            anim.SetLayerWeight(4, hitHeadCurve.Evaluate(HitTime));
+            //测试用的, 就看看
+            deleteMeThx.transform.position = new Vector3(0, hitBodyCurve.Evaluate(HitTime), 0);
+        }
+        else
+        {
+            HitTime = 0;
+            anim.SetLayerWeight(3, hitBodyCurve.Evaluate(HitTime));
+            anim.SetLayerWeight(4, hitHeadCurve.Evaluate(HitTime));
+        }
+
+        //接收指令击退
+        if (Input.GetKeyDown(KeyCode.X))
+        {
+            //用itween实现目标物体撞击中主角的演示。
+            //为啥用itween？ 语句简便，控制简单，效果好。
+            iTween.MoveTo(aimObject, iTween.Hash("x", transform.position.x, "z", transform.position.z, "time", 0.05f, "easeType", iTween.EaseType.easeOutQuad));
+
+            //获取世界坐标中的受击方向,获取距离
+            Vector3 forceDir = transform.position- aimObject.transform.position ;
+            float forceDis = forceDir.magnitude;  
+
+            //确认在击退范围内,执行击退
+            if (knockBackRange - forceDis > 0)
+            {
+                //修正自身朝向,并将自身朝向修正为摄像机朝向
+                float directionFix = transform.rotation.eulerAngles.y - anim.GetFloat("lookX");
+                transform.localEulerAngles = new Vector3(0, directionFix, 0);
+                Vector3 bodyDir = Quaternion.Euler(0, -directionFix, 0) * forceDir;
+                anim.SetFloat("rotationAngle", 0);
+                anim.SetFloat("lookX", 0);
+
+                //重置击退时间,对应animationCurve上的X轴参数
+                knockTime = 0;
+                //击退优先于跳跃状态.
+                anim.SetBool("jumpState", false);
+                //确保角色位移不接受动作资源的影响
+                anim.SetBool("fixDirection", false);
+                anim.applyRootMotion = false;
+                KnockBack(forceDir, forceDis);
+            }          
+        }
+
+        //击退状态中的行为和参数设置，使用animationCurve的方法, 更直观去调整时间和pose变化
+        if (anim.GetBool("knockBackState"))
+        {
+            knockTime  += Time.deltaTime;
+            anim.SetLayerWeight(5, knockBackCurve.Evaluate(knockTime));
+            //测试用的, 就看看
+            deleteMeThx.transform.position = new Vector3(0, knockBackCurve.Evaluate(knockTime), 0);
+
+            //击退过程中若发生视角旋转,pose会跟着发生变化
+            Vector3 bodyDir = transform.position - aimObject.transform.position;
+            bodyDir = Quaternion.Euler(0, -transform.rotation.eulerAngles.y, 0) * bodyDir;
+            anim.SetFloat("hitDirX", bodyDir.normalized .x);
+            anim.SetFloat("hitDirY", bodyDir.normalized. z);
+        }
+        //重置击退时间
+        else
+        {
+            knockTime = 0;
+            anim.SetLayerWeight(5, knockBackCurve.Evaluate(knockTime));
+        }
+    }
+
+    //确认受击状态结束
+    void HitEnd()
+    {
+        hitOrNot = false ;
+    }
+
+    //移动
+    void Move(float h, float v, float moveMagnitude)
+    {
+        movement.Set(h, 0f, v);
+        if (moveMagnitude > 0.05)
+        {
+            //移动的方向需要加上lookAt的偏移
+            anim.SetBool("fixDirection", false);
+            float direction = transform.rotation.eulerAngles.y - anim.GetFloat("lookX");
+            transform.localEulerAngles = new Vector3(0, direction, 0);
+            movement = Quaternion.Euler(0, direction, 0) * movement;
+            transform.Translate(movement * Time.deltaTime * speed, Space.World);
+            anim.SetFloat("rotationAngle", 0);
+            anim.SetFloat("lookX", 0);
+        }
+    }
+
+    //转向,包括90度转向动作的使用
+    void Turning()
+    {
+        float speedX = 0f;
+        float speedY = 0f;
+        float angle = 0f;
+
+        //鼠标右键旋转
+        if (Input.GetMouseButton(1))
+        {
+            speedX = Input.GetAxis("Mouse X") * sensitivityX;
+            speedY = Input.GetAxis("Mouse Y") * sensitivityY;
+            angle = anim.GetFloat("rotationAngle") - speedX;
+            //speedX = anim.GetFloat ("lookX") * (1 - dampening) + speedX * dampening;
+            //speedY = anim.GetFloat ("lookY") * (1 - dampening) + speedY * dampening;
+            speedX = anim.GetFloat("lookX") - speedX;
+            speedY = anim.GetFloat("lookY") + speedY;
+
+            //若移动的时候,重置lookAt转向的方向
+            if (anim.GetFloat("MoveSpeed") > 0)
+            {
+                angle = 0;
+                speedX = 0;
+            }
+            anim.SetFloat("rotationAngle", angle);
+
+            //旋转角度累计90时,修正触发条件和动作,动作中的Event回调角度修正的状态
+            if (angle > 90)
+            {
+                speedX = speedX - 90;
+                anim.SetFloat("rotationAngle", angle - 90f);
+                Debug.Log("====================================");
+                anim.SetTrigger("trunLeft");
+            }
+            if (angle < -90)
+            {
+                speedX = speedX + 90;
+                anim.SetFloat("rotationAngle", angle + 90f);
+                Debug.Log("====================================");
+                anim.SetTrigger("trunRight");
+            }
+
+            //播放左右转身动作中实时计算角度修正
+            if (anim.GetBool("fixDirection"))
+            {
+                //读取动作中的角度旋转
+                anim.applyRootMotion = true;
+                speedXOffset = transform.localEulerAngles.y - baseRotation;
+                //各边角度会有超过360的bug
+                if (speedXOffset > 180)
+                {
+                    speedXOffset = speedXOffset - 360;
+                }
+                if (speedXOffset < -180)
+                {
+                    speedXOffset = speedXOffset + 360;
+                }
+                
+                speedX = speedX + speedXOffset - speedXOffsetTemp;
+                Debug.Log("当前旋转偏移：" + speedXOffset);
+                Debug.Log("当前lookX：" + speedX);
+                anim.SetFloat("lookX", speedX);
+                speedXOffsetTemp = speedXOffset;
+            }
+            //旋转结束后,重置角度偏移, 不再读取动作资源中的旋转变化
+            else
+            {
+                speedXOffset = 0f;
+                anim.SetFloat("lookX", speedX);
+                anim.applyRootMotion = false ;
+            }
+           anim.SetFloat("lookY", speedY);
+
+            //摄像机旋转和角色旋转
+            if (axes == RotationAxes.MouseXAndY)
+            {
+                if (anim.GetFloat("MoveSpeed") > 0)
+                {
+                    transform.Rotate(0, Input.GetAxis("Mouse X") * sensitivityX, 0);
+                }
+                float rotationX = camera3p.transform.localEulerAngles.y + Input.GetAxis("Mouse X") * sensitivityX;
+                rotationY += Input.GetAxis("Mouse Y") * sensitivityY;
+                rotationY = Mathf.Clamp(rotationY, minimumY, maximumY);
+                camera3p.transform.localEulerAngles = new Vector3(-rotationY, rotationX, 0);
+            }
+            else if (axes == RotationAxes.MouseX)
+            {
+                transform.Rotate(0, Input.GetAxis("Mouse X") * sensitivityX, 0);
+
+                float rotationX = camera3p.transform.localEulerAngles.y + Input.GetAxis("Mouse X") * sensitivityX;
+                rotationY += Input.GetAxis("Mouse Y") * sensitivityY;
+                rotationY = Mathf.Clamp(rotationY, minimumY, maximumY);
+                camera3p.transform.localEulerAngles = new Vector3(-rotationY, rotationX, 0);
+            }
+            else
+            {
+                rotationY += Input.GetAxis("Mouse Y") * sensitivityY;
+                rotationY = Mathf.Clamp(rotationY, minimumY, maximumY);
+                transform.localEulerAngles = new Vector3(-rotationY, transform.localEulerAngles.y, 0);
+            }
+
+        }
+    }
+
+    //设置摄像机与角色的距离
+    void SetDistance()
+    {
+        camera3p.transform.position = transform.position + cameraOffset;
+        camera3p.transform.Translate(Vector3.forward * theDistance);
+        camera3p.transform.position = Vector3.Lerp(camera3p.transform.position, postCamPos, smoothing * Time.deltaTime);
+        postCamPos = camera3p.transform.position;
+    }
+
+
+    //给跳跃力，设置跳跃和离开地面的状态
+    private void Jump()
+    {        
+        if (this.grounded)
+        {
+            m_Rigidbody.AddForce(Vector3.up* JumpSpeed );
+            grounded = false;
+            anim.SetBool("jumpState", true);
+        }
+    }
+
+    //给击退的力，设置击退和离开地面的状态
+    private void KnockBack(Vector3 forceDir,float forceDis)
+    {
+        //力从中心到边缘逐渐衰减，所以到边缘部分可能出现力不够大的情况，一下给定比例，设定最多衰减到力的百分比，以下30%
+        float forceRate = (knockBackRange - forceDis) / knockBackRange;
+        anim.SetFloat("temp", forceRate);
+        if (forceRate < 0.3f)
+        {
+            forceRate = 0.3f;
+        }
+
+        //分开设定水平的力 和 上下的力
+        forceDir = new Vector3 (forceDir .x, 0, forceDir .z );
+        m_Rigidbody.AddForce(forceDir.normalized * knockBackPow * forceRate);
+        m_Rigidbody.AddForce(Vector3.up * knockBackPow_up* forceRate);
+        test_rig .AddForce(forceDir.normalized * knockBackPow * forceRate);
+        test_rig .AddForce(Vector3.up * knockBackPow_up * forceRate);
+        grounded = false;
+        anim.SetBool("knockBackState", true);
+    }
+
+    //刚体碰撞时的状态变化
+    private void OnCollisionEnter(Collision collision)
+    {
+        grounded = true;
+        anim.SetBool("jumpState", false);
+        anim.SetBool("knockBackState", false);
+    }
+
+    //动作资源Event里面设置的回调，左旋转
+    void DirectionLeftFix()
+    {
+        baseRotation = transform.localEulerAngles.y - 90f;
+        anim.SetBool("fixDirection", true);
+    }
+
+    //动作资源Event里面设置的回调，右旋转
+    void DirectionRightFix()
+    {
+        baseRotation = transform.localEulerAngles.y + 90f;
+        anim.SetBool("fixDirection", true);
+    }
+
+    //动作资源Event里面设置的回调。旋转结束,可以统一动作标准，代码中使用 Invoke指令，强制执行旋转结束。避免因为各种因素导致动作最后真没有播出来的情况。
+    void DirectionFixEnd()
+    {
+        anim.SetBool("fixDirection", false);
+    }
+}
+
+
+
+
