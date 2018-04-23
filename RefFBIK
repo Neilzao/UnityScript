@@ -1,0 +1,40 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using RootMotion;
+using RootMotion.FinalIK;
+
+public class RefFBIK : MonoBehaviour {
+
+public GameObject refCharacter;
+public BipedReferences references;
+public Vector3  leftHandOffset;
+private FullBodyBipedIK ik;
+
+// Use this for initialization
+void Start () {
+	
+}
+
+// Update is called once per frame
+void Update () {
+    if (refCharacter != null) {
+
+        BipedReferences.AutoDetectReferences(ref references, refCharacter.transform, BipedReferences.AutoDetectParams.Default);
+
+        ik = refCharacter.AddComponent<FullBodyBipedIK>();
+
+        ik.SetReferences(references,null);
+               
+        refCharacter = null;
+    }
+}
+
+private void LateUpdate()
+{
+    if (ik!=null)
+    {
+        ik.solver.leftHandEffector.positionOffset += ik.solver.GetRoot ().rotation*  leftHandOffset;
+    }
+    
+}
