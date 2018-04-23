@@ -1,0 +1,97 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class music_Pls : MonoBehaviour
+{
+
+    public Transform[] audioSpectrumObjects;
+    [Range(1, 100)] public float heightMultiplier;
+    [Range(64, 8192)] public int numberOfSamples = 1024; //step by 2
+    public FFTWindow fftWindow;
+    public float lerpTime = 1f;
+    public Slider sensitivitySlider;
+    private float preHeight;
+    private float averageHeight;
+    public float changeRate = 1f;
+    private GameObject prefab;
+    private  Rigidbody rig;
+    public float force = 100f;
+    [Range(1, 5)] public float difficulty = 1f;
+    private float coolDown = 0f;
+    public bool CDing = false;
+
+    // Use this for initialization
+    /*
+    * The intensity of the frequencies found between 0 and 44100 will be
+    * grouped into 1024 elements. So each element will contain a range of about 43.06 Hz.
+    * The average human voice spans from about 60 hz to 9k Hz
+    * we need a way to assign a range to each object that gets animated. that would be the best way to control and modify animatoins.
+    */
+    void Start()
+    {
+        heightMultiplier = 100f;
+        preHeight = 1f;
+        averageHeight = 0f;
+        coolDown = 1 / difficulty;
+        //heightMultiplier = PlayerPrefsManager.GetSensitivity();
+        // sensitivitySlider.onValueChanged.AddListener(SensitivityValueChangedHandler(sensitivitySlider));
+    }
+    //delegate
+
+    // Update is called once per frame
+    void Update()
+    {        
+        // initialize our float array
+        float[] spectrum = new float[numberOfSamples];
+        // populate array with fequency spectrum data
+        GetComponent<AudioSource>().GetSpectrumData(spectrum, 0, fftWindow);
+        // loop over audioSpectrumObjects and modify according to fequency spectrum data
+        // this loop matches the Array element to an object on a One-to-One basis.
+        for (int i = 0; i < audioSpectrumObjects.Length; i++)
+        {
+            // apply height multiplier to intensity
+            float intensity = spectrum[i] * heightMultiplier;
+            // calculate object's scale
+            float lerpY = Mathf.Lerp(audioSpectrumObjects[i].localScale.y, intensity, lerpTime*Time.deltaTime );
+            Vector3 newScale = new Vector3(audioSpectrumObjects[i].localScale.x, lerpY, audioSpectrumObjects[i].localScale.z);
+            // appply new scale to object
+            audioSpectrumObjects[i].localScale = newScale;
+            averageHeight += lerpY;
+        }
+        averageHeight = averageHeight / audioSpectrumObjects.Length;
+
+        if (coolDown >0)
+        {
+            coolDown -= Time.deltaTime;
+        }
+        else
+        {
+            if (averageHeight / preHeight > changeRate )
+            {
+                GameObject bullet = Instantiate(Resources.Load("prefab/sphere", typeof(GameObject))) as GameObject;
+                bullet.transform.position = new Vector3(0, 0, 0);
+                bullet.GetComponent<Rigidbody>().AddForce(Vector3.forward * force);
+                float randomElement = Random.Range(200, 300);
+                //Debug.Log("randomElement = " + randomElement/100f);
+                Destroy(bullet, randomElement / 100f);
+                coolDown =  1 / difficulty;
+            }
+            Debug.Log("Rate = " + averageHeight / preHeight);
+            preHeight = averageHeight;
+            averageHeight = 0f;
+        }
+        ///Debug.Log("coolDown = " + coolDown);
+    }
+
+    public void SensitivityValueChangedHandler(Slider sensitivitySlider)
+    {
+        heightMultiplier = sensitivitySlider.value;
+    }
+
+    public void holdCreate()
+    {
+        CDing = false;
+    }
+}
